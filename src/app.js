@@ -76,7 +76,7 @@ export function createApp({ db, features }) {
         const months = listMonths(db);
         body =
           months.length === 0
-            ? '<p>Nothing imported yet</p>'
+            ? '<p>Nothing imported yet</p><p><a href="/import">Import a statement</a></p>'
             : `<ul>${months.map((m) => `<li><a href="/month?m=${m}">${m}</a></li>`).join('')}</ul><p><a href="/import">Import a statement</a></p>`;
       } else {
         const { n } = db.prepare('SELECT COUNT(*) AS n FROM transactions').get();

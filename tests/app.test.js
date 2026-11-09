@@ -222,11 +222,12 @@ test('with the flag on, the home page lists the months newest first and links to
   }
 });
 
-test('with the flag on and no rows, the home page says nothing is imported', async () => {
+test('with the flag on and no rows, the home page says nothing is imported and links to /import', async () => {
   const { server, base } = await serve({ statementImport: true });
   try {
     const body = await (await fetch(`${base}/`)).text();
     assert.match(body, /Nothing imported yet/);
+    assert.match(body, /href="\/import"/);
   } finally {
     server.close();
   }
