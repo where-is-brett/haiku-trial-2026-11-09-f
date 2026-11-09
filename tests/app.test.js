@@ -9,8 +9,14 @@ function serve(features) {
   const db = new DatabaseSync(':memory:');
   const server = http.createServer(createApp({ db, features }));
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}` }));
+    server.listen(0, '127.0.0.1', () => resolve({ server, db, base: `http://127.0.0.1:${server.address().port}` }));
   });
+}
+
+function upload(base, text) {
+  const form = new FormData();
+  form.append('statement', new Blob([text], { type: 'text/csv' }), 'statement.csv');
+  return fetch(`${base}/import`, { method: 'POST', body: form });
 }
 
 test('with the flag off, /import is a 404 like any unknown path', async () => {
@@ -80,6 +86,57 @@ test('posting an empty file picker shows the form again with no result line', as
     const body = await (await fetch(`${base}/import`, { method: 'POST', body: form })).text();
     assert.match(body, /type="file" name="statement"/);
     assert.doesNotMatch(body, /Added/);
+  } finally {
+    server.close();
+  }
+});
+
+test('with the flag off, a POST to /import is a 404 and stores nothing', async () => {
+  const { server, db, base } = await serve({ statementImport: false });
+  try {
+    const res = await upload(base, 'Date,Description,Amount\n02/08/2026,Hollis Insurance,123.50\n');
+    assert.equal(res.status, 404);
+    assert.equal(await res.text(), 'Not found');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM transactions').get().n, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test('a file with the wrong header shows the plain message and the form, with a 200', async () => {
+  const { server, db, base } = await serve({ statementImport: true });
+  try {
+    const res = await upload(base, 'Date,Amount\n02/08/2026,123.50\n');
+    const body = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(body, /<p>That file is not a bank statement\. Nothing was added\.<\/p>/);
+    assert.match(body, /type="file" name="statement"/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM transactions').get().n, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test('a file with a date that does not exist shows the plain message and the form, with a 200', async () => {
+  const { server, db, base } = await serve({ statementImport: true });
+  try {
+    const res = await upload(base, 'Date,Description,Amount\n02/08/2026,Hollis Insurance,123.50\n31/02/2026,Lowtide Grocers,5.80\n');
+    const body = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(body, /<p>That file is not a bank statement\. Nothing was added\.<\/p>/);
+    assert.match(body, /type="file" name="statement"/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM transactions').get().n, 0);
+  } finally {
+    server.close();
+  }
+});
+
+test('after a refused upload, the home page still says nothing is imported', async () => {
+  const { server, base } = await serve({ statementImport: true });
+  try {
+    await upload(base, 'Date,Description,Amount\n31/02/2026,Lowtide Grocers,5.80\n');
+    const body = await (await fetch(`${base}/`)).text();
+    assert.match(body, /Nothing imported yet/);
   } finally {
     server.close();
   }

@@ -2,7 +2,7 @@
 // Builds the request handler. The database and the feature flags are passed in,
 // so tests can run the app against an in-memory database.
 
-import { importStatement } from './import.js';
+import { importStatement, NotAStatementError } from './import.js';
 
 function page(body) {
   return `<!doctype html>
@@ -43,8 +43,17 @@ async function handleImport(req, db) {
   if (!(file instanceof File) || file.name === '') {
     return page(importForm);
   }
-  const { added, skipped } = importStatement(db, await file.text());
-  return page(`${importForm}<p>Added ${added}, skipped ${skipped}</p>`);
+  let result;
+  try {
+    result = importStatement(db, await file.text());
+  } catch (err) {
+    // A refused file adds nothing, so the form is shown again with the plain message.
+    if (err instanceof NotAStatementError) {
+      return page(`${importForm}<p>That file is not a bank statement. Nothing was added.</p>`);
+    }
+    throw err;
+  }
+  return page(`${importForm}<p>Added ${result.added}, skipped ${result.skipped}</p>`);
 }
 
 export function createApp({ db, features }) {
@@ -73,7 +82,7 @@ export function createApp({ db, features }) {
           res.end(html);
         },
         (err) => {
-          // Errors from importStatement (a row with no amount) are not mapped yet; they show as 500.
+          // Any error that is not a refused statement is a server fault and shows as 500.
           console.error(err);
           res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
           res.end('Import failed');
