@@ -32,7 +32,9 @@ async function readBody(req) {
 // when a file was sent.
 async function handleImport(req, db) {
   // Only a file upload is read as a form; any other POST gets the form back.
-  if (!String(req.headers['content-type'] ?? '').startsWith('multipart/form-data')) {
+  // The media type is compared without case, as HTTP treats media types as case-insensitive.
+  const mediaType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (mediaType !== 'multipart/form-data') {
     return page(importForm);
   }
   const body = await readBody(req);

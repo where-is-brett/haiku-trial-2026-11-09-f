@@ -173,3 +173,30 @@ test('after a refused upload, the home page still says nothing is imported', asy
     server.close();
   }
 });
+
+test('a valid statement sent with an uppercase multipart content type is imported', async () => {
+  const { server, db, base } = await serve({ statementImport: true });
+  try {
+    // Build the multipart body with FormData, then send it with the media type in another case.
+    const built = new Request(`${base}/import`, {
+      method: 'POST',
+      body: await (async () => {
+        const form = new FormData();
+        form.append('statement', new Blob(['Date,Description,Amount\n02/08/2026,Hollis Insurance,123.50\n03/08/2026,Lowtide Grocers,5.80\n'], { type: 'text/csv' }), 'statement.csv');
+        return form;
+      })(),
+    });
+    const contentType = built.headers.get('content-type').replace(/^multipart\/form-data/, 'Multipart/Form-Data');
+    const res = await fetch(`${base}/import`, {
+      method: 'POST',
+      headers: { 'content-type': contentType },
+      body: Buffer.from(await built.arrayBuffer()),
+    });
+    const body = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(body, /Added 2, skipped 0/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM transactions').get().n, 2);
+  } finally {
+    server.close();
+  }
+});
