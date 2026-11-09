@@ -48,6 +48,21 @@ test('a thousands comma inside quotes is read as cents', () => {
   assert.equal(db.prepare('SELECT cents FROM transactions').get().cents, 123450);
 });
 
+test('a row with no usable amount refuses the whole upload and stores nothing', () => {
+  const rows = [
+    '02/08/2026,Lowtide Grocers,',
+    '02/08/2026,Lowtide Grocers',
+    '02/08/2026,Lowtide Grocers,abc',
+  ];
+  for (const row of rows) {
+    const db = freshDb();
+    // The table exists before the import, as it does in the running app.
+    db.exec('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, date TEXT, description TEXT, cents INTEGER)');
+    assert.throws(() => importStatement(db, HEADER + row + '\n'), /no amount/);
+    assert.equal(count(db), 0);
+  }
+});
+
 test('CRLF line endings and blank lines add no extra rows', () => {
   const db = freshDb();
   const text = 'Date,Description,Amount\r\n02/08/2026,Hollis Insurance,123.50\r\n\r\n03/08/2026,Lowtide Grocers,5.80\r\n\r\n';

@@ -15,10 +15,15 @@ export function importStatement(db, text) {
     .slice(1)
     .map((line) => {
       const fields = parseCsvLine(line);
+      const cents = parseAmount(fields[2]);
+      // A row with no usable amount would be stored as NULL, so the whole upload is refused.
+      if (!Number.isFinite(cents)) {
+        throw new Error(`row has no amount: ${line}`);
+      }
       return {
         date: parseDate(fields[0]),
         description: fields[1].trim(),
-        cents: parseAmount(fields[2]),
+        cents,
       };
     });
 
