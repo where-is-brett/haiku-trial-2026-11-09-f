@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { importStatement } from '../src/import.js';
+import { importStatement, NotAStatementError } from '../src/import.js';
 
 const HEADER = 'Date,Description,Amount\n';
 
@@ -51,7 +51,6 @@ test('a thousands comma inside quotes is read as cents', () => {
 test('a row with no usable amount refuses the whole upload and stores nothing', () => {
   const rows = [
     '02/08/2026,Lowtide Grocers,',
-    '02/08/2026,Lowtide Grocers',
     '02/08/2026,Lowtide Grocers,abc',
   ];
   for (const row of rows) {
@@ -61,6 +60,24 @@ test('a row with no usable amount refuses the whole upload and stores nothing', 
     assert.throws(() => importStatement(db, HEADER + row + '\n'), /no amount/);
     assert.equal(count(db), 0);
   }
+});
+
+// A row with an extra comma is not a row of this statement. Its amount would be read from
+// the wrong field, so the whole upload is refused and nothing is stored.
+test('a row whose field count is not three is refused and stores nothing', () => {
+  for (const row of ['02/08/2026,Big Shop,1,234.50', '02/08/2026,Lowtide Grocers']) {
+    const db = freshDbWithTable();
+    assert.throws(() => importStatement(db, HEADER + row + '\n'), /^Error: not a bank statement: row has \d fields/);
+    assert.equal(count(db), 0);
+  }
+});
+
+test('a quoted description with a comma still imports as three fields', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '06/08/2026,"Pasta, Pizza & Co",102.29\n';
+  assert.deepEqual(importStatement(db, text), { added: 1, skipped: 0 });
+  assert.equal(db.prepare('SELECT description, cents FROM transactions').get().description, 'Pasta, Pizza & Co');
+  assert.equal(db.prepare('SELECT cents FROM transactions').get().cents, 10229);
 });
 
 test('CRLF line endings and blank lines add no extra rows', () => {
@@ -154,6 +171,32 @@ test('31/12/2026 is the last day of the year and is accepted', () => {
   const db = freshDbWithTable();
   const text = HEADER + '31/12/2026,Hollis Insurance,123.50\n';
   assert.deepEqual(importStatement(db, text), { added: 1, skipped: 0 });
+});
+
+// Every refusal is a NotAStatementError, and each one stores nothing.
+test('the four refusals are all NotAStatementError and store nothing', () => {
+  const cases = [
+    ['wrong header', 'Foo,Bar,Baz\n02/08/2026,Hollis Insurance,123.50\n'],
+    ['no header', '02/08/2026,Hollis Insurance,123.50\n'],
+    ['bad date', HEADER + '99/99/9999,Hollis Insurance,123.50\n'],
+    ['no amount', HEADER + '02/08/2026,Lowtide Grocers,\n'],
+  ];
+  for (const [name, text] of cases) {
+    const db = freshDbWithTable();
+    assert.throws(() => importStatement(db, text), NotAStatementError, name);
+    assert.equal(count(db), 0, name);
+  }
+});
+
+// A trigger aborts the second insert. Without the transaction the first row would stay.
+test('a failure part way through an upload rolls back every row of it', () => {
+  const db = freshDbWithTable();
+  db.exec(
+    "CREATE TRIGGER refuse_boom BEFORE INSERT ON transactions WHEN NEW.description = 'Boom' BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+  );
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n03/08/2026,Boom,1.00\n04/08/2026,Hollis Insurance,2.00\n';
+  assert.throws(() => importStatement(db, text), /boom/);
+  assert.equal(count(db), 0);
 });
 
 test('the sample statement imports every data row', () => {

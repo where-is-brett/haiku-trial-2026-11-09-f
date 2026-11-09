@@ -5,6 +5,10 @@ import { parseDate } from './lib/dates.js';
 
 const HEADER_LINE = 'Date,Description,Amount';
 
+// The one error for a file that is not a statement. Every refusal in importStatement
+// throws it, and nothing is stored when it is thrown.
+export class NotAStatementError extends Error {}
+
 // Stores one statement upload. The first non-blank line must be the header, exactly
 // as HEADER_LINE, and blank lines are ignored. A row is skipped when a row stored
 // before this upload has the same date, description and cents; repeated lines inside
@@ -16,17 +20,21 @@ export function importStatement(db, text) {
     .map((line) => line.replace(/\r$/, ''))
     .filter((line) => line.trim() !== '');
   if (lines[0] !== HEADER_LINE) {
-    throw new Error(`not a bank statement: the header must be ${HEADER_LINE}`);
+    throw new NotAStatementError(`not a bank statement: the header must be ${HEADER_LINE}`);
   }
   const rows = lines
     .slice(1)
     .map((line) => {
       const fields = parseCsvLine(line);
+      // A row with more or fewer fields has its amount in the wrong place, so the upload is refused.
+      if (fields.length !== 3) {
+        throw new NotAStatementError(`not a bank statement: row has ${fields.length} fields: ${line}`);
+      }
       checkDate(fields[0]);
       const cents = parseAmount(fields[2]);
       // A row with no usable amount would be stored as NULL, so the whole upload is refused.
       if (!Number.isFinite(cents)) {
-        throw new Error(`row has no amount: ${line}`);
+        throw new NotAStatementError(`not a bank statement: row has no amount: ${line}`);
       }
       return {
         date: parseDate(fields[0]),
@@ -78,7 +86,7 @@ function checkDate(text) {
     Number(month) >= 1 &&
     Number(month) <= 12;
   if (!inRange || !existsInCalendar(Number(day), Number(month), Number(year))) {
-    throw new Error(`not a bank statement: bad date "${text}"`);
+    throw new NotAStatementError(`not a bank statement: bad date "${text}"`);
   }
 }
 
