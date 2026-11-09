@@ -63,11 +63,12 @@ export function importStatement(db, text) {
 }
 
 // The three-part rule from the spec: DD/MM/YYYY, with day 1 to 31, month 1 to 12 and
-// a four-digit year. parseDate only converts, so the check happens here first.
+// a four-digit year. The date must also exist in the calendar, so 31/02/2026 is refused.
+// parseDate only converts, so the check happens here first.
 function checkDate(text) {
   const parts = String(text).trim().split('/');
   const [day, month, year] = parts;
-  const ok =
+  const inRange =
     parts.length === 3 &&
     /^\d{1,2}$/.test(day) &&
     /^\d{1,2}$/.test(month) &&
@@ -76,9 +77,18 @@ function checkDate(text) {
     Number(day) <= 31 &&
     Number(month) >= 1 &&
     Number(month) <= 12;
-  if (!ok) {
+  if (!inRange || !existsInCalendar(Number(day), Number(month), Number(year))) {
     throw new Error(`not a bank statement: bad date "${text}"`);
   }
+}
+
+// Builds the UTC date from the parts and reads it back. If the day or the month moved,
+// the calendar has no such date. setUTCFullYear is used because Date.UTC reads the years
+// 0 to 99 as 1900 to 1999, which would refuse 29/02/0000.
+function existsInCalendar(day, month, year) {
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getUTCDate() === day && date.getUTCMonth() === month - 1;
 }
 
 // One key per row. JSON keeps the parts apart, so a pipe in a description cannot

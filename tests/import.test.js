@@ -121,6 +121,41 @@ test('every date outside the three-part rule is refused', () => {
   }
 });
 
+// A date in the three-part shape that does not exist in the calendar is refused, and
+// one such row refuses the whole upload.
+test('31/02/2026 refuses the whole upload and stores nothing', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n31/02/2026,Hollis Insurance,123.50\n';
+  assert.throws(() => importStatement(db, text), /^Error: not a bank statement/);
+  assert.equal(count(db), 0);
+});
+
+test('29/02/2026 refuses the whole upload and stores nothing', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n29/02/2026,Hollis Insurance,123.50\n';
+  assert.throws(() => importStatement(db, text), /^Error: not a bank statement/);
+  assert.equal(count(db), 0);
+});
+
+test('31/04/2026 refuses the whole upload and stores nothing', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n31/04/2026,Hollis Insurance,123.50\n';
+  assert.throws(() => importStatement(db, text), /^Error: not a bank statement/);
+  assert.equal(count(db), 0);
+});
+
+test('29/02/2024 is a leap day and is accepted', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '29/02/2024,Hollis Insurance,123.50\n';
+  assert.deepEqual(importStatement(db, text), { added: 1, skipped: 0 });
+});
+
+test('31/12/2026 is the last day of the year and is accepted', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '31/12/2026,Hollis Insurance,123.50\n';
+  assert.deepEqual(importStatement(db, text), { added: 1, skipped: 0 });
+});
+
 test('the sample statement imports every data row', () => {
   // Open question: the approved spec says "Added 4, skipped 0". The file has 128 data rows.
   // This test uses the file as it is; see the question raised with the director.
