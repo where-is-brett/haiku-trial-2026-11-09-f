@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { importStatement } from '../src/import.js';
+import { importStatement, NotAStatementError } from '../src/import.js';
 
 const HEADER = 'Date,Description,Amount\n';
 
@@ -154,6 +154,32 @@ test('31/12/2026 is the last day of the year and is accepted', () => {
   const db = freshDbWithTable();
   const text = HEADER + '31/12/2026,Hollis Insurance,123.50\n';
   assert.deepEqual(importStatement(db, text), { added: 1, skipped: 0 });
+});
+
+// Every refusal is a NotAStatementError, and each one stores nothing.
+test('the four refusals are all NotAStatementError and store nothing', () => {
+  const cases = [
+    ['wrong header', 'Foo,Bar,Baz\n02/08/2026,Hollis Insurance,123.50\n'],
+    ['no header', '02/08/2026,Hollis Insurance,123.50\n'],
+    ['bad date', HEADER + '99/99/9999,Hollis Insurance,123.50\n'],
+    ['no amount', HEADER + '02/08/2026,Lowtide Grocers,\n'],
+  ];
+  for (const [name, text] of cases) {
+    const db = freshDbWithTable();
+    assert.throws(() => importStatement(db, text), NotAStatementError, name);
+    assert.equal(count(db), 0, name);
+  }
+});
+
+// A trigger aborts the second insert. Without the transaction the first row would stay.
+test('a failure part way through an upload rolls back every row of it', () => {
+  const db = freshDbWithTable();
+  db.exec(
+    "CREATE TRIGGER refuse_boom BEFORE INSERT ON transactions WHEN NEW.description = 'Boom' BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+  );
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n03/08/2026,Boom,1.00\n04/08/2026,Hollis Insurance,2.00\n';
+  assert.throws(() => importStatement(db, text), /boom/);
+  assert.equal(count(db), 0);
 });
 
 test('the sample statement imports every data row', () => {
