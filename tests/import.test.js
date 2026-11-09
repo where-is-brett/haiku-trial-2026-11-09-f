@@ -51,7 +51,6 @@ test('a thousands comma inside quotes is read as cents', () => {
 test('a row with no usable amount refuses the whole upload and stores nothing', () => {
   const rows = [
     '02/08/2026,Lowtide Grocers,',
-    '02/08/2026,Lowtide Grocers',
     '02/08/2026,Lowtide Grocers,abc',
   ];
   for (const row of rows) {
@@ -61,6 +60,24 @@ test('a row with no usable amount refuses the whole upload and stores nothing', 
     assert.throws(() => importStatement(db, HEADER + row + '\n'), /no amount/);
     assert.equal(count(db), 0);
   }
+});
+
+// A row with an extra comma is not a row of this statement. Its amount would be read from
+// the wrong field, so the whole upload is refused and nothing is stored.
+test('a row whose field count is not three is refused and stores nothing', () => {
+  for (const row of ['02/08/2026,Big Shop,1,234.50', '02/08/2026,Lowtide Grocers']) {
+    const db = freshDbWithTable();
+    assert.throws(() => importStatement(db, HEADER + row + '\n'), /^Error: not a bank statement: row has \d fields/);
+    assert.equal(count(db), 0);
+  }
+});
+
+test('a quoted description with a comma still imports as three fields', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '06/08/2026,"Pasta, Pizza & Co",102.29\n';
+  assert.deepEqual(importStatement(db, text), { added: 1, skipped: 0 });
+  assert.equal(db.prepare('SELECT description, cents FROM transactions').get().description, 'Pasta, Pizza & Co');
+  assert.equal(db.prepare('SELECT cents FROM transactions').get().cents, 10229);
 });
 
 test('CRLF line endings and blank lines add no extra rows', () => {

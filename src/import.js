@@ -26,6 +26,10 @@ export function importStatement(db, text) {
     .slice(1)
     .map((line) => {
       const fields = parseCsvLine(line);
+      // A row with more or fewer fields has its amount in the wrong place, so the upload is refused.
+      if (fields.length !== 3) {
+        throw new NotAStatementError(`not a bank statement: row has ${fields.length} fields: ${line}`);
+      }
       checkDate(fields[0]);
       const cents = parseAmount(fields[2]);
       // A row with no usable amount would be stored as NULL, so the whole upload is refused.
