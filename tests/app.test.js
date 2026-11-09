@@ -131,6 +131,38 @@ test('a file with a date that does not exist shows the plain message and the for
   }
 });
 
+test('a POST with application/json shows the form with a 200 and no result line', async () => {
+  const { server, base } = await serve({ statementImport: true });
+  try {
+    const res = await fetch(`${base}/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const body = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(body, /type="file" name="statement"/);
+    assert.doesNotMatch(body, /Import failed/);
+    assert.doesNotMatch(body, /Added/);
+  } finally {
+    server.close();
+  }
+});
+
+test('a POST with no content type shows the form with a 200 and no result line', async () => {
+  const { server, base } = await serve({ statementImport: true });
+  try {
+    const res = await fetch(`${base}/import`, { method: 'POST' });
+    const body = await res.text();
+    assert.equal(res.status, 200);
+    assert.match(body, /type="file" name="statement"/);
+    assert.doesNotMatch(body, /Import failed/);
+    assert.doesNotMatch(body, /Added/);
+  } finally {
+    server.close();
+  }
+});
+
 test('after a refused upload, the home page still says nothing is imported', async () => {
   const { server, base } = await serve({ statementImport: true });
   try {

@@ -31,6 +31,10 @@ async function readBody(req) {
 // Returns the page to show after an upload: the form again, with the result line
 // when a file was sent.
 async function handleImport(req, db) {
+  // Only a file upload is read as a form; any other POST gets the form back.
+  if (!String(req.headers['content-type'] ?? '').startsWith('multipart/form-data')) {
+    return page(importForm);
+  }
   const body = await readBody(req);
   const request = new Request('http://localhost/import', {
     method: 'POST',
