@@ -3,6 +3,7 @@
 // so tests can run the app against an in-memory database.
 
 import { importStatement, NotAStatementError } from './import.js';
+import { listMonths } from './months.js';
 
 function page(body) {
   return `<!doctype html>
@@ -70,8 +71,17 @@ export function createApp({ db, features }) {
   return (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/') {
-      const { n } = db.prepare('SELECT COUNT(*) AS n FROM transactions').get();
-      const body = n === 0 ? '<p>Nothing imported yet</p>' : `<p>${n} transactions imported</p>`;
+      let body;
+      if (features.statementImport) {
+        const months = listMonths(db);
+        body =
+          months.length === 0
+            ? '<p>Nothing imported yet</p>'
+            : `<ul>${months.map((m) => `<li><a href="/month?m=${m}">${m}</a></li>`).join('')}</ul><p><a href="/import">Import a statement</a></p>`;
+      } else {
+        const { n } = db.prepare('SELECT COUNT(*) AS n FROM transactions').get();
+        body = n === 0 ? '<p>Nothing imported yet</p>' : `<p>${n} transactions imported</p>`;
+      }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(page(body));
       return;
