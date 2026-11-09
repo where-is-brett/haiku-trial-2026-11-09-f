@@ -200,3 +200,47 @@ test('a valid statement sent with an uppercase multipart content type is importe
     server.close();
   }
 });
+
+function insertRows(db, dates) {
+  const insert = db.prepare('INSERT INTO transactions (date, description, cents) VALUES (?, ?, ?)');
+  for (const date of dates) insert.run(date, 'Test row', 100);
+}
+
+test('with the flag on, the home page lists the months newest first and links to /import', async () => {
+  const { server, db, base } = await serve({ statementImport: true });
+  try {
+    insertRows(db, ['2026-08-02', '2026-08-03', '2026-09-01']);
+    const body = await (await fetch(`${base}/`)).text();
+    const september = body.indexOf('href="/month?m=2026-09"');
+    const august = body.indexOf('href="/month?m=2026-08"');
+    assert.notEqual(september, -1);
+    assert.notEqual(august, -1);
+    assert.ok(september < august, 'September should be listed before August');
+    assert.match(body, /href="\/import"/);
+  } finally {
+    server.close();
+  }
+});
+
+test('with the flag on and no rows, the home page says nothing is imported and links to /import', async () => {
+  const { server, base } = await serve({ statementImport: true });
+  try {
+    const body = await (await fetch(`${base}/`)).text();
+    assert.match(body, /Nothing imported yet/);
+    assert.match(body, /href="\/import"/);
+  } finally {
+    server.close();
+  }
+});
+
+test('with the flag off and one row, the home page keeps the count and has no month links', async () => {
+  const { server, db, base } = await serve({ statementImport: false });
+  try {
+    insertRows(db, ['2026-08-02']);
+    const body = await (await fetch(`${base}/`)).text();
+    assert.match(body, /1 transactions imported/);
+    assert.doesNotMatch(body, /\/month\?m=/);
+  } finally {
+    server.close();
+  }
+});
