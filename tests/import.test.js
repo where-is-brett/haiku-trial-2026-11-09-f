@@ -69,6 +69,58 @@ test('CRLF line endings and blank lines add no extra rows', () => {
   assert.deepEqual(importStatement(db, text), { added: 2, skipped: 0 });
 });
 
+// A database with the transactions table already present, as the running app has it.
+// The refusal tests use it so that count() reads 0 rather than failing on a missing table.
+function freshDbWithTable() {
+  const db = freshDb();
+  db.exec('CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, date TEXT, description TEXT, cents INTEGER)');
+  return db;
+}
+
+test('a file whose header is not exactly Date,Description,Amount is refused and stores nothing', () => {
+  for (const header of ['Foo,Bar,Baz\n', 'date,description,amount\n', 'Date,Description,Amount,Extra\n']) {
+    const db = freshDbWithTable();
+    assert.throws(
+      () => importStatement(db, header + '02/08/2026,Hollis Insurance,123.50\n'),
+      /^Error: not a bank statement/,
+    );
+    assert.equal(count(db), 0);
+  }
+});
+
+test('a file with rows but no header line is refused and stores nothing', () => {
+  const db = freshDbWithTable();
+  const text = '02/08/2026,Hollis Insurance,123.50\n03/08/2026,Lowtide Grocers,5.80\n';
+  assert.throws(() => importStatement(db, text), /^Error: not a bank statement/);
+  assert.equal(count(db), 0);
+});
+
+test('a bad date 99/99/9999 refuses the whole upload and stores nothing', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n99/99/9999,Hollis Insurance,123.50\n';
+  assert.throws(() => importStatement(db, text), /^Error: not a bank statement: bad date/);
+  assert.equal(count(db), 0);
+});
+
+test('a date with no slashes, 2026-08-15, refuses the whole upload and stores nothing', () => {
+  const db = freshDbWithTable();
+  const text = HEADER + '02/08/2026,Lowtide Grocers,5.80\n2026-08-15,Hollis Insurance,123.50\n';
+  assert.throws(() => importStatement(db, text), /^Error: not a bank statement: bad date/);
+  assert.equal(count(db), 0);
+});
+
+test('every date outside the three-part rule is refused', () => {
+  const badDates = ['32/13/26', 'xx/yy/zzzz', '00/08/2026', '02/00/2026', '02/08/26', '002/08/2026', '02/08/20266', '02/08', '02/08/2026/1', ' '];
+  for (const date of badDates) {
+    const db = freshDbWithTable();
+    assert.throws(
+      () => importStatement(db, HEADER + '02/08/2026,Lowtide Grocers,5.80\n' + date + ',Hollis Insurance,123.50\n'),
+      /^Error: not a bank statement: bad date/,
+    );
+    assert.equal(count(db), 0);
+  }
+});
+
 test('the sample statement imports every data row', () => {
   // Open question: the approved spec says "Added 4, skipped 0". The file has 128 data rows.
   // This test uses the file as it is; see the question raised with the director.
